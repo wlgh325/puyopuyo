@@ -11,20 +11,18 @@
 #define DRIVER_DESC	"driver for dotmatrix"
 
 #define DOTM_NAME		"dotmatrix"
-#define DOTM_MOUDLE_VERSION	"dotmatrix V2.0"
+#define DOTM_MOUDLE_VERSION	"dotmatrix V1.0"
 #define DOTM_ADDR		0x210
 
 #define DOTM_MAGIC 0xBC
 #define DOTM_SET_ALL		_IOW(DOTM_MAGIC, 0, int)
 #define DOTM_SET_CLEAR		_IOW(DOTM_MAGIC, 1, int)
-#define DOTM_EXPLOSION1		_IOW(DOTM_MAGIC, 2, int)
-#define DOTM_EXPLOSION2		_IOW(DOTM_MAGIC, 3, int)
-#define DOTM_EXPLOSION3		_IOW(DOTM_MAGIC, 4, int)
-#define DOTM_EXPLOSION4		_IOW(DOTM_MAGIC, 5, int)
-#define DOTM_EXPLOSION5		_IOW(DOTM_MAGIC, 6, int)
-#define DOTM_EXPLOSION6		_IOW(DOTM_MAGIC, 7, int)
-#define DOTM_EXPLOSION7		_IOW(DOTM_MAGIC, 8, int)
-
+#define DOTM_SHIFT_LEFT		_IOW(DOTM_MAGIC, 2, int)
+#define DOTM_SHIFT_RIGHT	_IOW(DOTM_MAGIC, 3, int)
+#define DOTM_NAME_ENG		_IOW(DOTM_MAGIC, 4, int)
+#define DOTM_NAME_KOR		_IOW(DOTM_MAGIC, 5, int)
+#define MAKE_SIGN		_IOW(DOTM_MAGIC, 6, int)
+#define DOTM_EXPLOSION		_IOW(DOTM_MAGIC, 7, int)
 
 // gpio fpga interface provided
 extern ssize_t iom_fpga_itf_read(unsigned int addr);
@@ -34,6 +32,7 @@ extern ssize_t iom_fpga_itf_write(unsigned int addr, unsigned int value);
 static int dotm_in_use = 0;
 static char buf[20];
 static unsigned char sign[8][10];
+static int check = 0;
 
 // dotmatrix fonts
 unsigned char dotm_fontmap_decimal[10][10] = { 
@@ -157,8 +156,9 @@ ssize_t dotm_write(struct file *pinode, const char * gdata, size_t len, loff_t *
 }
 
 static long dotm_ioctl(struct file *pinode, unsigned int cmd, unsigned long data){
-	int i;
+	int i, j;
 	unsigned short wordvalue;
+	int size;
 
 	switch(cmd){
 		case DOTM_SET_ALL:
@@ -173,49 +173,130 @@ static long dotm_ioctl(struct file *pinode, unsigned int cmd, unsigned long data
 				iom_fpga_itf_write((unsigned int) DOTM_ADDR+(i*2), wordvalue);
 			}
 			break;
-		case DOTM_EXPLOSION1:
+		case DOTM_SHIFT_LEFT:
 			for(i=0; i<10; i++){
-				wordvalue = dotm_fontmap_explosion[0][i] & 0x7F;
+				if(check < 7){
+					if(check == 0){
+						sign[0][i] = (sign[0][i] << 1) & 0x7e;
+					}
+					else{
+						sign[0][i] = (sign[0][i] << 1) & 0x7e;
+						sign[0][i] = (sign[0][i] | ((sign[1][i] >> (7-check) ) & 0x01 )) & 0x7f;	
+					}
+					wordvalue = sign[0][i];
+				}
+				else if(check < 14){
+					if(check == 7)
+						sign[1][i] = (sign[1][i] << 1) & 0x7e;
+					else{
+						sign[1][i] = (sign[1][i] << 1) & 0x7e;
+						sign[1][i] = (sign[1][i] | ((sign[2][i] >> (14-check) ) & 0x01 )) & 0x7f;
+					}
+					wordvalue = sign[1][i];	
+				}
+				else if(check < 21){
+					if(check == 14)
+						sign[2][i] = (sign[2][i] << 1) & 0x7e;
+					else{
+						sign[2][i] = (sign[2][i] << 1) & 0x7e;
+						sign[2][i] = (sign[2][i] | ((sign[3][i] >> (21-check) ) & 0x01 )) & 0x7f;
+					}
+					wordvalue = sign[2][i];
+				}
+				else if(check <28){
+					if(check == 21)
+						sign[3][i] = (sign[3][i] << 1) & 0x7e;
+					else{
+						sign[3][i] = (sign[3][i] << 1) & 0x7e;
+						sign[3][i] = (sign[3][i] | ((sign[4][i] >> (28-check) ) & 0x01 )) & 0x7f;
+					}
+					wordvalue = sign[3][i];
+				}
+				else if(check < 35){
+					if(check == 28)
+						sign[4][i] = (sign[4][i] << 1) & 0x7e;
+					else{
+						sign[4][i] = (sign[4][i] << 1) & 0x7e;
+						sign[4][i] = (sign[4][i] | ((sign[5][i] >> (35-check) ) & 0x01 )) & 0x7f;
+					}
+					wordvalue = sign[4][i];
+				}
+				else if(check < 42){
+					if(check == 35)
+						sign[5][i] = (sign[5][i] << 1) & 0x7e;
+					else{
+						sign[5][i] = (sign[5][i] << 1) & 0x7e;
+						sign[5][i] = (sign[5][i] | ((sign[6][i] >> (42-check) ) & 0x01 )) & 0x7f;
+					}
+					wordvalue = sign[5][i];
+				}
+				else{
+					if(check == 42)
+						sign[6][i] = (sign[6][i] << 1) & 0x7e;
+					else{
+						sign[6][i] = (sign[6][i] << 1) & 0x7e;
+						sign[6][i] = (sign[6][i] | ((sign[7][i] >> (49-check) ) & 0x01 )) & 0x7f;
+					}
+					wordvalue = sign[6][i];
+				}
+		
 				iom_fpga_itf_write((unsigned int) DOTM_ADDR+(i*2), wordvalue);
+				printk("check: %d, sign : %x\n", check,wordvalue);
 			}
-			break;
-		case DOTM_EXPLOSION2:
-			for(i=0; i<10; i++){
-				wordvalue = dotm_fontmap_explosion[1][i] & 0x7F;
-				iom_fpga_itf_write((unsigned int) DOTM_ADDR+(i*2), wordvalue);
-			}
-			break;
-		case DOTM_EXPLOSION3:
-			for(i=0; i<10; i++){
-				wordvalue = dotm_fontmap_explosion[2][i] & 0x7F;
-				iom_fpga_itf_write((unsigned int) DOTM_ADDR+(i*2), wordvalue);
-			}
-			break;
-		case DOTM_EXPLOSION4:
-			for(i=0; i<10; i++){
-				wordvalue = dotm_fontmap_explosion[3][i] & 0x7F;
-				iom_fpga_itf_write((unsigned int) DOTM_ADDR+(i*2), wordvalue);
-			}
-			break;
-		case DOTM_EXPLOSION5:
-			for(i=0; i<10; i++){
-				wordvalue = dotm_fontmap_explosion[4][i] & 0x7F;
-				iom_fpga_itf_write((unsigned int) DOTM_ADDR+(i*2), wordvalue);
-			}
-			break;
-		case DOTM_EXPLOSION6:
-			for(i=0; i<10; i++){
-				wordvalue = dotm_fontmap_explosion[5][i] & 0x7F;
-				iom_fpga_itf_write((unsigned int) DOTM_ADDR+(i*2), wordvalue);
-			}
-			break;
-		case DOTM_EXPLOSION7:
-			for(i=0; i<10; i++){
-				wordvalue = dotm_fontmap_explosion[6][i] & 0x7F;
-				iom_fpga_itf_write((unsigned int) DOTM_ADDR+(i*2), wordvalue);
-			}
-			break;
 
+			check++;
+			if(check ==49)
+				check =0;
+			break;
+		case DOTM_SHIFT_RIGHT:
+			for(i=0; i<10; i++){
+				wordvalue = iom_fpga_itf_read((unsigned int) DOTM_ADDR+(i*2));
+				wordvalue = (wordvalue >> 1) & 0x7F;
+				iom_fpga_itf_write((unsigned int) DOTM_ADDR+(i*2), wordvalue);
+			}
+			break;
+		case DOTM_NAME_ENG:
+			size = sizeof(dotm_fontmap_name_eng) / sizeof(dotm_fontmap_name_eng[0]);
+
+			for(i=0; i<size; i++){
+				for(j=0; j<10; j++){
+					wordvalue = dotm_fontmap_name_eng[i][j] & 0x7F;
+					iom_fpga_itf_write((unsigned int) DOTM_ADDR+(j*2), wordvalue);
+				}
+
+				// 0.2 sec for 1 Character
+				msleep(200);
+			}
+			break;
+		case DOTM_NAME_KOR:
+			size = sizeof(dotm_fontmap_name_kor) / sizeof(dotm_fontmap_name_eng[0]);
+			for(i=0; i<size; i++){
+				for(j=0; j<10; j++){
+					wordvalue = dotm_fontmap_name_kor[i][j] & 0x7F;
+					iom_fpga_itf_write((unsigned int) DOTM_ADDR+(j*2), wordvalue);
+				}
+				// 0.2 sec for 1 Character
+				msleep(200);
+			}
+			break;
+		case MAKE_SIGN:
+			for(i=0; i<8; i++){
+				for(j=0; j<10; j++){
+					sign[i][j] = dotm_fontmap_decimal[buf[i]][j];
+				}
+			}
+			
+			break;
+			
+		case DOTM_EXPLOSION:
+			for(i=0; i<7; i++){
+				for(j=0; j<10; j++){
+					wordvalue = dotm_fontmap_explosion[i][j] & 0x7F;
+					iom_fpga_itf_write((unsigned int) DOTM_ADDR+(j*2), wordvalue);
+				}
+				msleep(50);
+			}
+			break;
 			
 	}
 	return 0;	

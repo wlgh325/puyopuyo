@@ -20,13 +20,15 @@ __attribute__((section("__versions"))) = {
 	{ 0xce929fa7, __VMLINUX_SYMBOL_STR(module_layout) },
 	{ 0x556b29aa, __VMLINUX_SYMBOL_STR(misc_deregister) },
 	{ 0xc1162379, __VMLINUX_SYMBOL_STR(misc_register) },
+	{ 0xc3c0ea1c, __VMLINUX_SYMBOL_STR(iom_fpga_itf_read) },
+	{ 0xf9a482f9, __VMLINUX_SYMBOL_STR(msleep) },
 	{ 0x8f678b07, __VMLINUX_SYMBOL_STR(__stack_chk_guard) },
 	{ 0xdb7305a1, __VMLINUX_SYMBOL_STR(__stack_chk_fail) },
 	{ 0xdcb764ad, __VMLINUX_SYMBOL_STR(memset) },
+	{ 0x8ff679d3, __VMLINUX_SYMBOL_STR(iom_fpga_itf_write) },
 	{ 0x27e1a049, __VMLINUX_SYMBOL_STR(printk) },
 	{ 0x84bc974b, __VMLINUX_SYMBOL_STR(__arch_copy_from_user) },
 	{ 0x88db9f48, __VMLINUX_SYMBOL_STR(__check_object_size) },
-	{ 0x8ff679d3, __VMLINUX_SYMBOL_STR(iom_fpga_itf_write) },
 };
 
 static const char __module_depends[]
@@ -35,4 +37,4 @@ __attribute__((section(".modinfo"))) =
 "depends=";
 
 
-MODULE_INFO(srcversion, "EC7809687F1A6106E43C930");
+MODULE_INFO(srcversion, "608EFAECE19CA058548486A");

@@ -12,18 +12,6 @@
 #define PUSH_BTN_MOUDLE_VERSION	"PUSH_BUTTON V1.0"
 #define PUSH_BTN_ADDR		0x050
 
-#define PUSH_MAGIC 0xBD
-#define PUSH_BTN_1		_IOW(PUSH_MAGIC, 1, int)
-#define PUSH_BTN_2		_IOW(PUSH_MAGIC, 2, int)
-#define PUSH_BTN_3		_IOW(PUSH_MAGIC, 3, int)
-#define PUSH_BTN_4		_IOW(PUSH_MAGIC, 4, int)
-#define PUSH_BTN_5		_IOW(PUSH_MAGIC, 5, int)
-#define PUSH_BTN_6		_IOW(PUSH_MAGIC, 6, int)
-#define PUSH_BTN_7		_IOW(PUSH_MAGIC, 7, int)
-#define PUSH_BTN_8		_IOW(PUSH_MAGIC, 8, int)
-#define PUSH_BTN_9		_IOW(PUSH_MAGIC, 9, int)
-
-
 
 // gpio fpga interface provided
 extern ssize_t iom_fpga_itf_read(unsigned int addr);
@@ -59,23 +47,10 @@ ssize_t pushBtn_read(struct file *pinode, char *gdata, size_t len, loff_t *off_w
 		button = (button | (wordvalue << i) ) & 0x01FF ;
 	}
 
-	printk("##################################\n");
-	printk("#########%#x\n", button);
-	printk("##################################\n");
 	if (copy_to_user(tmp, &button, 2)) {
 		return -EFAULT;
 	}
 	return len;
-
-}
-
-static long pushBtn_ioctl(struct file *pinode, unsigned int cmd, unsigned long data){
-
-	switch(cmd){
-	
-	}
-
-	return 0;
 
 }
 
@@ -84,8 +59,6 @@ static struct file_operations pushBtn_fops = {
 	.open	= pushBtn_open,
 	.read	= pushBtn_read,
 	.release = pushBtn_release,
-	.unlocked_ioctl = pushBtn_ioctl,
-
 };
 
 static struct miscdevice pushBtn_driver = {

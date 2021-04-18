@@ -9,8 +9,6 @@ import android.view.ViewDebug;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
@@ -31,23 +29,23 @@ public class StageManager extends GameObject {
     private final int NEXT_NUMBER = 2;
     private GameSurface gameSurface;
 
+    private long shuffleSeed;
     private List<ColorPair> nextPuyoPairsFactory = new ArrayList<>(); // 색패 생성 및 섞기
     private Queue<ColorPair> nextPuyoPairsQueue = new LinkedList<>(); // 색패 대기 큐
-    private PuyoNext[][] puyoNexts = new PuyoNext[4][NEXT_NUMBER]; // 넥스트 뿌요 보여주기
-    private ColorPair[] nextPuyoPairs = new ColorPair[NEXT_NUMBER]; // 넥스트 뿌요 색깔
+    private PuyoNext[] puyoNexts = new PuyoNext[NEXT_NUMBER]; // 넥스트 뿌요 보여주기
     private List<Integer> garbagePuyoPosition = new ArrayList<>(); // 색패 생성 및 섞기
-    private GarbageTray[] garbageTray = new GarbageTray[4]; // 예고 뿌요
+    private ColorPair[] nextPuyoPairs = new ColorPair[NEXT_NUMBER];
 
     private int currentStage, nextStage; // Control Stage -> [Fall Stage -> Chain Stage] -> Garbage Stage
-    private boolean checkNextStage = true;
-    private boolean garbageFallTiming, garbageFalling;
-    private int chainCnt;
+    public boolean checkNextStage = true;
+    public int garbagePuyo = 0;
+    private int chainCnt = 0;
 
     public StageManager(GameSurface gameSurface) {
         super();
 
-        this.gameSurface = gameSurface;
-        addShuffledColorPairs(true);
+        this.gameSurface= gameSurface;
+        addShuffledColorPairs();
         initNextPuyo();
 
         for (int i = 0; i < MAX_COLUMN; i++) {
@@ -56,22 +54,15 @@ public class StageManager extends GameObject {
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inScaled = false;
 
-        Bitmap bitmap_puyo = BitmapFactory.decodeResource(gameSurface.getResources(), R.drawable.spr_puyo, options);
-        Bitmap bitmap_warning = BitmapFactory.decodeResource(gameSurface.getResources(), R.drawable.spr_warning, options);
-        for (int p = 0; p < 4; p++) {
-            puyoNexts[p][0] = new PuyoNext(gameSurface, bitmap_puyo, 157 + FIELD_INTERVAL*p, 58, nextPuyoPairs[0].getColor(0), nextPuyoPairs[0].getColor(1), 1f, 1f);
-            puyoNexts[p][1] = new PuyoNext(gameSurface, bitmap_puyo, 190 + FIELD_INTERVAL*p, 82, nextPuyoPairs[1].getColor(0), nextPuyoPairs[1].getColor(1), 0.8f, 0.8f);
-            garbageTray[p] = new GarbageTray(bitmap_warning, 32 + FIELD_INTERVAL*p, 150);
-        }
+        Bitmap bitmap = BitmapFactory.decodeResource(gameSurface.getResources(), R.drawable.spr_puyo, options);
+        puyoNexts[0] = new PuyoNext(gameSurface, bitmap, 157, 58, nextPuyoPairs[0].getColor(0), nextPuyoPairs[0].getColor(1), 1f, 1f);
+        puyoNexts[1] = new PuyoNext(gameSurface, bitmap, 190, 82, nextPuyoPairs[1].getColor(0), nextPuyoPairs[1].getColor(1), 0.8f, 0.8f);
     }
 
     @Override
     public void draw(Canvas canvas)  {
-        for (int p = 0; p < Network.max_player; p++) {
-            for (int i = 0; i < NEXT_NUMBER; i++) {
-                puyoNexts[p][i].draw(canvas);
-                garbageTray[p].draw(canvas);
-            }
+        for (int i = 0; i < NEXT_NUMBER; i++) {
+            puyoNexts[i].draw(canvas);
         }
         lastDrawNanoTime = System.nanoTime();
     }
@@ -82,14 +73,9 @@ public class StageManager extends GameObject {
 
         if (currentStage == CONTROL_STAGE) {
             checkDefeat(); // 패배 체크
-            if (gameSurface.gameState != 1) { // 플레이 중일때만 색패 생성
+            if (gameSurface.gameState != 1) // 플레이 중일때만 색패 생성
                 return;
-            }
             else if (checkNextStage) {
-                if (gameSurface.attacked) {
-                    gameSurface.networkManager.finishAttack();
-                    gameSurface.attacked = false;
-                }
                 checkNextStage = false;
                 bringNextPuyo();
                 nextStage = CHAIN_STAGE;
@@ -101,15 +87,14 @@ public class StageManager extends GameObject {
             }
         }
         if (currentStage == FALL_STAGE) {
-            if (!garbageFalling) {
-                if (checkNextStage) {
-                    gameSurface.networkManager.fallStage();
-                    checkNextStage = false;
-                    gameSurface.fallPuyo(Network.player);
-                    gameSurface.destroyOutPuyo();
-                } else {
-                    checkAllPuyoIsFalling();
-                }
+            if (checkNextStage) {
+                checkNextStage = false;
+                gameSurface.fallPuyo();
+                gameSurface.destroyOutPuyo();
+                gameSurface.clientThread.sendFieldMessage();
+            }
+            else {
+                checkAllPuyoIsFalling();
             }
         }
         if (currentStage == CHAIN_STAGE) { // 체인 존재시 다시 FALL_STAGE 로, 체인 없을시 GARBAGE_STAGE 로
@@ -118,50 +103,26 @@ public class StageManager extends GameObject {
                 if (gameSurface.chainPuyo()) {
                     chainCnt++;
                     ledWrite(chainCnt);
-                } else {
+                }
+                else {
                     currentStage = GARBAGE_STAGE;
                 }
             }
         }
         if (currentStage == GARBAGE_STAGE) {
-            if (garbageFallTiming) {
-                checkNextStage = true;
-                garbageFalling = true;
-                gameSurface.networkManager.fallGarbage(); // 떨어질 방해뿌요 개수 요청
-            }
+            checkNextStage = true;
+            fallGarbagePuyo(garbagePuyo);
             nextStage = CONTROL_STAGE;
             currentStage = FALL_STAGE;
         }
     }
 
-    public void fallGarbagePuyo(int garbage_amount) {
-        if (garbage_amount <= 0) {
-            garbageFalling = false;
-            garbageFallTiming = false;
-            return;
-        }
-        int i;
-        int line = garbage_amount / MAX_COLUMN; // line 줄
-        int remainder = garbage_amount % MAX_COLUMN; // 나머지
-
-        for (i = MAX_ACTIVE_ROW; i < MAX_ACTIVE_ROW + line; i++) {
-            for (int j = 0; j < MAX_COLUMN; j++) {
-                gameSurface.createPuyo(Network.player, Color.COLOR_GARBAGE, i, j);
-            }
-        }
-        Collections.shuffle(garbagePuyoPosition);
-        for (int j = 0; j < remainder; j++) {
-            gameSurface.createPuyo(Network.player, Color.COLOR_GARBAGE, i, garbagePuyoPosition.get(j));
-        }
-        garbageFalling = false;
-    }
-
     private void checkAllPuyoIsFalling() {
-        for (int i = 0; i < gameSurface.opponentPuyo.puyoMap[Network.player].length * gameSurface.opponentPuyo.puyoMap[Network.player][0].length; i++) {
-            int row = i / gameSurface.opponentPuyo.puyoMap[Network.player][0].length; // 행
-            int column = i % gameSurface.opponentPuyo.puyoMap[Network.player][0].length; // 열
-            if (gameSurface.opponentPuyo.puyoMap[Network.player][row][column] != null) {
-                if (gameSurface.opponentPuyo.puyoMap[Network.player][row][column].getIsFalling()) {
+        for (int i = 0; i < gameSurface.puyoArray.length * gameSurface.puyoArray[0].length; i++) {
+            int row = i / gameSurface.puyoArray[0].length; // 행
+            int column = i % gameSurface.puyoArray[0].length; // 열
+            if (gameSurface.puyoArray[row][column] != null) {
+                if (gameSurface.puyoArray[row][column].getIsFalling()) {
                     return;
                 }
             }
@@ -170,7 +131,7 @@ public class StageManager extends GameObject {
         currentStage = nextStage;
     }
 
-    private void addShuffledColorPairs(boolean start) { // 64개의 색패가 한 사이클
+    private void addShuffledColorPairs() { // 64개의 색패가 한 사이클
         ColorPair colorPair;
         for (int i = 0; i < 4; i++) {
             for (int j = 0; j < 4; j++) {
@@ -180,18 +141,16 @@ public class StageManager extends GameObject {
             }
         }
         if (nextPuyoPairs[0] == null) {
-            Collections.shuffle(nextPuyoPairsFactory, new Random(gameSurface.shuffleSeed));
-            gameSurface.shuffleSeed++;
-            if (start) {
-                while (checkAllDifferentColor()) {
-                    Collections.shuffle(nextPuyoPairsFactory, new Random(gameSurface.shuffleSeed));
-                    gameSurface.shuffleSeed++;
-                }
+            Collections.shuffle(nextPuyoPairsFactory, new Random(shuffleSeed));
+            shuffleSeed++;
+            while (checkAllDifferentColor()) {
+                Collections.shuffle(nextPuyoPairsFactory, new Random(shuffleSeed));
+                shuffleSeed++;
             }
         }
         else {
-            Collections.shuffle(nextPuyoPairsFactory, new Random(gameSurface.shuffleSeed));
-            gameSurface.shuffleSeed++;
+            Collections.shuffle(nextPuyoPairsFactory, new Random(shuffleSeed));
+            shuffleSeed++;
         }
 
         for (int i = 0; i < nextPuyoPairsFactory.size(); i++) {
@@ -202,10 +161,9 @@ public class StageManager extends GameObject {
     }
 
     private void checkDefeat() {
-        if (gameSurface.gameState == 1) {
-            if (gameSurface.opponentPuyo.puyoMap[Network.player][11][2] != null) {
+        if (gameSurface.gameState != 0) {
+            if (gameSurface.puyoArray[11][2] != null) {
                 gameSurface.gameState = 0;
-                gameSurface.networkManager.defeat();
             }
         }
     }
@@ -238,25 +196,36 @@ public class StageManager extends GameObject {
         nextPuyoPairs[0] = nextPuyoPairs[1];
         nextPuyoPairs[1] = nextPuyoPairsQueue.poll();
         if (nextPuyoPairsQueue.isEmpty()) { // 큐가 비었으면 추가로 생성
-            addShuffledColorPairs(false);
+            addShuffledColorPairs();
         }
-        //if (!Network.server) {
-            //gameSurface.clientThread.sendNextPuyoMessage(nextPuyoPairs[1].getColor(0), nextPuyoPairs[1].getColor(1));
-            gameSurface.networkManager.nextPuyo(nextPuyoPairs[1].getColor(0), nextPuyoPairs[1].getColor(1));
-            //gameSurface.networkManager.nextPuyo(puyoNexts[Network.player][1].getColor(0), puyoNexts[Network.player][1].getColor(1));
-        //}
-        updateNextPuyo(Network.player);
+        updateNextPuyo();
     }
 
-    public void updateNextPuyo(int player) {
+    private void updateNextPuyo() {
         for (int i = 0; i < NEXT_NUMBER; i++) {
-            puyoNexts[player][i].setColor(nextPuyoPairs[i].getColor(0), nextPuyoPairs[i].getColor(1));
+            puyoNexts[i].setColor(nextPuyoPairs[i].getColor(0), nextPuyoPairs[i].getColor(1));
         }
     }
 
-    public void addNextPuyo(int player, int color1, int color2) {
-        puyoNexts[player][0].setColor(puyoNexts[player][1].getColor(0), puyoNexts[player][1].getColor(1));
-        puyoNexts[player][1].setColor(color1, color2);
+    private void fallGarbagePuyo(int number) {
+        if (number <= 0) {
+            return;
+        }
+        int i;
+        int garbage_amount = Math.min(30, number); // 최대 한 번에 30개씩만 방해뿌요 낙하
+        int line = garbage_amount / MAX_COLUMN; // line 줄
+        int remainder = garbage_amount % MAX_COLUMN; // 나머지
+
+        garbagePuyo -= garbage_amount;
+        for (i = MAX_ACTIVE_ROW; i < MAX_ACTIVE_ROW + line; i++) {
+            for (int j = 0; j < MAX_COLUMN; j++) {
+                gameSurface.createPuyo(Color.COLOR_GARBAGE, i, j);
+            }
+        }
+        Collections.shuffle(garbagePuyoPosition);
+        for (int j = 0; j < remainder; j++) {
+            gameSurface.createPuyo(Color.COLOR_GARBAGE, i, garbagePuyoPosition.get(j));
+        }
     }
 
     public void endControlStage() {
@@ -271,18 +240,6 @@ public class StageManager extends GameObject {
 
     public int getChainCnt() {
         return chainCnt;
-    }
-
-    public void addWarningPuyo(int playerTo, int warningPuyo) {
-        garbageTray[playerTo].addWarningPuyo(warningPuyo);
-        /*
-        if (playerBy != Network.player) {
-            hashMap.put(chainNumber * 10 + playerBy, false);
-        }*/
-    }
-
-    public void finishAttack() {
-        garbageFallTiming = true;
     }
 }
 

@@ -18,11 +18,10 @@ import static android.content.ContentValues.TAG;
 
 
 class Network {
-    public static int player = -1;
-    public static int max_player = -1;
+    public static int player;
+    public static int max_player;
     public static int current_player;
-    public static boolean server = true;
-    public static String hostAddress;
+    public static boolean server;
 }
 
 public class MainActivity extends Activity {
@@ -62,19 +61,6 @@ public class MainActivity extends Activity {
         btn_fourRoom = (Button)findViewById(R.id.makeFourRoomBtn);
         btn_enterRoom = (Button)findViewById(R.id.enterRoomBtn);
         tv_addr = (TextView)findViewById(R.id.addrText);
-
-        btn_oneRoom.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                //server 만들기
-                Network.server = true;
-                Network.max_player = 1;
-                Network.player = 0;
-                Network.current_player = 1;
-                Intent intent = new Intent(getApplicationContext(), GameActivity.class);
-                startActivity(intent);
-            }
-        });
 
         btn_twoRoom.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -121,7 +107,7 @@ public class MainActivity extends Activity {
                 //client 생성하여 접속하기
                 Network.server = false;
                 Network.player = -1;
-                Network.hostAddress = tv_addr.getText().toString();
+                String addr = tv_addr.getText().toString();
 
                 Intent intent = new Intent(getApplicationContext(), GameActivity.class);
                 startActivity(intent);

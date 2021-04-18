@@ -12,12 +12,10 @@ public class Score extends GameObject {
 
     private int rowIndex; // For Image
     private int colIndex; // For Image
-    private int score, player, timer;
-    private final int SCORE_TIMER = 1000; // 밀리세컨드마다 서버에 SCORE 보내기
+    private int score;
 
-    public Score(GameSurface gameSurface, int player, Bitmap image, int x, int y) {
+    public Score(GameSurface gameSurface, Bitmap image, int x, int y) {
         super(image, 1, 10, x, y, 0.3f, 0.4f); // row, col 에 맞는 위치로 설정
-        this.player = player;
         this.gameSurface = gameSurface;
     }
 
@@ -46,15 +44,6 @@ public class Score extends GameObject {
     @Override
     public void update() {
         super.update();
-        //if (gameSurface.gameState >= 0) {
-            if (player == Network.player) {
-                timer += deltaTime;
-                if (timer > SCORE_TIMER) {
-                    gameSurface.networkManager.setScore();
-                    timer -= SCORE_TIMER;
-                }
-            }
-        //}
     }
 
     public int getScore() {
@@ -62,7 +51,6 @@ public class Score extends GameObject {
     }
 
     public void addScore(int add) {
-        gameSurface.calculateGarbagePuyo(add);
         score += add;
     }
 
@@ -70,16 +58,10 @@ public class Score extends GameObject {
         int add;
         // 분석할 필요 X
         add = puyo_number * Math.max(1, (getChainBonus(chain_cnt) + getConnectionBonus(connection_number) + getColorBonus(color_number))) * 10;
-        if (player == Network.player) {
-            gameSurface.networkManager.setScore();
-        }
-        addScore(add);
+        score += add;
+        gameSurface.calculateGarbagePuyo(add);
         //Log.d("TAG", puyo_number+", "+chain_cnt+", ["+connection_number[0]+connection_number[1]+connection_number[2]+connection_number[3]+"], "+color_number);
         //Log.d("TAG", "Score: "+add);
-    }
-
-    public void setScore(int score) {
-        this.score = score;
     }
 
 
@@ -89,11 +71,11 @@ public class Score extends GameObject {
         if (chain == 0) {
             return bonus;
         }
-        else if (chain < 5) {
-            bonus = (int) Math.pow(2, chain - 1) * 8;
+        else if (chain <= 5) {
+            bonus = (int) Math.pow(2, chain - 2) * 8;
         }
         else {
-            bonus = (chain - 2)*32;
+            bonus = (chain - 3)*32;
         }
 
         return bonus;

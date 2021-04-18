@@ -25,10 +25,11 @@ public class PuyoActivePair extends GameObject { // 현재 색패 (Main, Sub 로
     private final int[][] ROTATE_POSITION = {{1, 0}, {0, 1}, {-1, 0}, {0, -1}}; // 회전에 따른 rowSub, columnSub 위치
     private GameSurface gameSurface;
     private AxisPuyoOutline axisPuyoOutline;
+    private StageManager stageManager;
     private SoundManager soundManager;
 
     private int rowIndexMain, colIndexMain, rowIndexSub, colIndexSub; // For Image
-    private boolean enabled = false;
+    private boolean enabled = true;
 
     private int rowMain, columnMain, rowSub, columnSub; // 현재 색패의 row, column.
     private float fieldHeight; // 현재 높이
@@ -38,7 +39,7 @@ public class PuyoActivePair extends GameObject { // 현재 색패 (Main, Sub 로
     private int rotation; // 0:up(default), 1:right, 2:down, 3:left
     private int softDrop;
 
-    public PuyoActivePair(GameSurface gameSurface, SoundManager soundManager, Bitmap image) {
+    public PuyoActivePair(GameSurface gameSurface, StageManager stageManager, SoundManager soundManager, Bitmap image) {
         super(image, 2, 6, 0, 0); // row, col 에 맞는 위치로 설정
 
         BitmapFactory.Options options = new BitmapFactory.Options();
@@ -46,6 +47,7 @@ public class PuyoActivePair extends GameObject { // 현재 색패 (Main, Sub 로
         Bitmap bitmap = BitmapFactory.decodeResource(gameSurface.getResources(), R.drawable.spr_puyo_outline, options);
         axisPuyoOutline = new AxisPuyoOutline(gameSurface, bitmap, x, y);
 
+        this.stageManager = stageManager;
         this.soundManager = soundManager;
         this.gameSurface = gameSurface;
     }
@@ -53,7 +55,7 @@ public class PuyoActivePair extends GameObject { // 현재 색패 (Main, Sub 로
     @Override
     public void draw(Canvas canvas)  {
         if (enabled) {
-            this.x = 24 + 9 + columnMain * COLUMN + FIELD_INTERVAL*Network.player;
+            this.x = 24 + 9 + columnMain * COLUMN;
             this.y = 502 - ((((int) (fieldHeight / DROP_UNIT)) * DROP_UNIT) * ROW) / HEIGHT_UNIT;
 
             Bitmap bitmapMain = this.createSubImageAt(rowIndexMain, colIndexMain);
@@ -93,9 +95,9 @@ public class PuyoActivePair extends GameObject { // 현재 색패 (Main, Sub 로
             rowMain = (int) fieldHeight / HEIGHT_UNIT;
 
             if (placeTimer > PLACE_TIME) {
-                gameSurface.stageManager.endControlStage(); // 다음 Stage
-                gameSurface.createPuyo(Network.player, colorMain, rowMain, columnMain);
-                gameSurface.createPuyo(Network.player, colorSub, rowSub, columnSub);
+                stageManager.endControlStage(); // 다음 Stage
+                gameSurface.createPuyo(colorMain, rowMain, columnMain);
+                gameSurface.createPuyo(colorSub, rowSub, columnSub);
                 setDisabled();
             }
             axisPuyoOutline.update();
@@ -119,7 +121,7 @@ public class PuyoActivePair extends GameObject { // 현재 색패 (Main, Sub 로
         if (press == 1) {
             softDrop = SOFT_DROP_SPEED;
             if (enabled) {
-                gameSurface.fieldUIScoreList.get(Network.player).addScore(1);
+                gameSurface.fieldUIScoreList.get(0).addScore(1);
             }
         }
         else {
@@ -184,7 +186,7 @@ public class PuyoActivePair extends GameObject { // 현재 색패 (Main, Sub 로
     public void setEnabled(int colorMain, int colorSub) {
         enabled = true;
         placeTimer = 0;
-        x = 24 + 9 + INIT_COL * COLUMN + FIELD_INTERVAL*Network.player;
+        x = 24 + 9 + INIT_COL * COLUMN;
         y = 502 - INIT_ROW * ROW;
         rotation = 0;
         initRowColumn(INIT_ROW, INIT_COL);

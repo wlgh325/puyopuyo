@@ -18,24 +18,23 @@ public class Puyo extends GameObject { // 필드 뿌요
 
     private int row, column;
     private float fieldHeight;
-    private int player, color;
+    private int color;
     private boolean isFalling, isRemoving;
     public int removeTimer;
     private boolean visibility = true;
 
-    public Puyo(GameSurface gameSurface, Bitmap image, int player, int color, int row, int col) {
+    public Puyo(GameSurface gameSurface, Bitmap image, int row, int col, int color) {
         super(image, 2, 6, 24 + 9 + col * COLUMN, 502 - row * ROW); // row, col 에 맞는 위치로 설정
         setColor(color);
         setRowColumn(row, col);
         fieldHeight = row*HEIGHT_UNIT;
 
-        this.player = player;
         this.gameSurface = gameSurface;
     }
 
     @Override
     public void draw(Canvas canvas)  {
-        this.x = 24 + 9 + column * COLUMN + player*FIELD_INTERVAL;
+        this.x = 24 + 9 + column * COLUMN;
         this.y = (int) (502 - (fieldHeight * ROW) / HEIGHT_UNIT);
 
         if (visibility) {

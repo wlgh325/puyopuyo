@@ -9,10 +9,12 @@ import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
+import java.util.Random;
 
 import static android.content.ContentValues.TAG;
 import static com.example.puyopuyo.FieldSize.*;
@@ -20,26 +22,28 @@ import static com.example.puyopuyo.FieldSize.*;
 
 public class GameSurface extends SurfaceView implements SurfaceHolder.Callback { // 게임 화면
 
+
     static {
         System.loadLibrary("pushBtn");
         System.loadLibrary("7segment");
         System.loadLibrary("dotmatrix");
-        System.loadLibrary("lcd");
     }
 
     public native int pushBtnRead();
     public native int SSegmentWrite(int score);
     public native int makeExplosion();
-    public native void lcdWrite(String text, int pos);
 
-    public GameThread gameThread;
+    private ServerThread serverThread;
+    public ClientThread clientThread;
+    private GameThread gameThread;
     public static final int MAX_STREAMS = 100;
 
     public int gameState = -1; // -1:시작전, 0:패배, 1:플레이중, 2:승리
 
-    public StageManager stageManager;
+    private StageManager stageManager;
     private SoundManager soundManager;
     private PuyoChainingAnimation puyoChainingAnimation;
+    private OpponentPuyo opponentPuyo;
     private PuyoActivePair puyoActivePair;
     private final List<GameObject> managerObjectList = new ArrayList<GameObject>(); // 매니저 오브젝트들
     private final List<GameObject> fieldUIBackgroundList = new ArrayList<GameObject>(); // 필드 배경들
@@ -47,29 +51,19 @@ public class GameSurface extends SurfaceView implements SurfaceHolder.Callback {
     public final List<Score> fieldUIScoreList = new ArrayList<Score>(); // 스코어 UI
     private final List<GameObject> puyoList = new ArrayList<GameObject>(); // 필드에 있는 뿌요들
     public BitmapFactory.Options options = new BitmapFactory.Options();
-    public OpponentPuyo opponentPuyo;
-    public NetworkManager networkManager;
-    public boolean attacked = false;
-    public long shuffleSeed;
 
     private static final int NO_PUSH = -1, PUSH_LEFT = 0, PUSH_DOWN = 1, PUSH_RIGHT = 2;
     private static final int PUSH_ROTATE_LEFT = 3, PUSH_ROTATE_RIGHT = 4;
 
     private int touch_down = -1;
-    private int garbageScore, garbagePuyo;
-    private int defeatedPlayer;
+    private int garbageScore = 0;
 
+    public Puyo puyoArray[][] = new Puyo[MAX_ROW][MAX_COLUMN]; // 필드 뿌요
     private int size_x, size_y;
-    private final String showPlayerText = "1   2   3   4   ";
-    private String showPlayerState = "O   O   O   O   ";
 
     public GameSurface(Context context, int x, int y)  {
         super(context);
         options.inScaled = false;
-
-        if (Network.server) {
-            //shuffleSeed = System.currentTimeMillis();
-        }
 
         this.setFocusable(true);
 
@@ -78,14 +72,35 @@ public class GameSurface extends SurfaceView implements SurfaceHolder.Callback {
         this.getHolder().addCallback(this);
     }
 
-    public void startGame(long seed) {
-        Log.d("START", "startGame");
-        lcdWrite(showPlayerText, 0);
-        lcdWrite(showPlayerState, 16);
-        //shuffleSeed = seed;
-        gameState = 1;
-        //stageManager = new StageManager(this);
-        //managerObjectList.add(stageManager);
+
+    private void startServer() {
+        if (Network.server) {
+            if (serverThread == null) {
+                serverThread = new ServerThread(8081, this, opponentPuyo);
+                serverThread.start();
+            }
+        }
+        // setLocalIPAddress
+    }
+
+    private void stopServer() {
+        try {
+            if (serverThread != null) {
+                serverThread.closeServer();
+            }
+            serverThread = null;
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            Log.d("TAG", "Server Stopped");
+        }
+    }
+
+    private void startClient(String address, int port) {
+        if (!Network.server) {
+            clientThread = new ClientThread(address, port, this, opponentPuyo);
+            clientThread.start();
+        }
     }
 
     @Override
@@ -120,39 +135,10 @@ public class GameSurface extends SurfaceView implements SurfaceHolder.Callback {
         return false;
     }
 
-    public void defeatPlayer(int player) {
-        defeatedPlayer++;
-        // TODO. 패배한 player LCD
-        Log.d("TAG", ""+defeatedPlayer + ","+Network.max_player);
-        if (defeatedPlayer >= Network.max_player - 1) {
-            if (gameState != 0) {
-                gameState = 2;
-            }
-        }
-
-        String text = "X";
-        switch(player){
-            case 0:
-                lcdWrite(text, 16);
-                break;
-            case 1:
-                lcdWrite(text, 20);
-                break;
-            case 2:
-                lcdWrite(text, 24);
-                break;
-            case 3:
-                lcdWrite(text, 28);
-        }
-    }
-
-    public void update() {
-        //Log.d("TAG", networkManager.warningPuyo[0]+","+networkManager.warningPuyo[1]+","+networkManager.warningPuyo[2]+","+networkManager.warningPuyo[3]);
+    public void update()  {
         for(GameObject gameObject: managerObjectList) {
             gameObject.update();
         }
-        if (stageManager != null)
-            stageManager.update();
         for(GameObject gameObject: fieldUIBackgroundList) {
             gameObject.update();
         }
@@ -170,33 +156,32 @@ public class GameSurface extends SurfaceView implements SurfaceHolder.Callback {
             score.update();
         }
 
-        if (gameState == 1) {
-            int cmd = pushBtnRead();
-            if (cmd != NO_PUSH) {
-                switch (cmd) {
-                    case PUSH_LEFT:
-                        puyoActivePair.move(-1);
-                        puyoActivePair.moveDown(0);
-                        break;
-                    case PUSH_DOWN:
-                        puyoActivePair.moveDown(1);
-                        break;
-                    case PUSH_RIGHT:
-                        puyoActivePair.move(1);
-                        puyoActivePair.moveDown(0);
-                        break;
-                    case PUSH_ROTATE_LEFT:
-                        puyoActivePair.rotate(-1);
-                        puyoActivePair.moveDown(0);
-                        break;
-                    case PUSH_ROTATE_RIGHT:
-                        puyoActivePair.rotate(1);
-                        puyoActivePair.moveDown(0);
-                        break;
-                }
-            } else if (touch_down != 1) {
-                puyoActivePair.moveDown(0);
+        int cmd = pushBtnRead();
+        if(cmd != NO_PUSH) {
+            switch(cmd){
+                case PUSH_LEFT:
+                    puyoActivePair.move(-1);
+                    puyoActivePair.moveDown(0);
+                    break;
+                case PUSH_DOWN:
+                    puyoActivePair.moveDown(1);
+                    break;
+                case PUSH_RIGHT:
+                    puyoActivePair.move(1);
+                    puyoActivePair.moveDown(0);
+                    break;
+                case PUSH_ROTATE_LEFT:
+                    puyoActivePair.rotate(-1);
+                    puyoActivePair.moveDown(0);
+                    break;
+                case PUSH_ROTATE_RIGHT:
+                    puyoActivePair.rotate(1);
+                    puyoActivePair.moveDown(0);
+                    break;
             }
+        }
+        else if (touch_down != 1) {
+            puyoActivePair.moveDown(0);
         }
         SSegmentWrite(fieldUIScoreList.get(Network.player).getScore());
     }
@@ -222,38 +207,37 @@ public class GameSurface extends SurfaceView implements SurfaceHolder.Callback {
         for(GameObject gameObject: managerObjectList) {
             gameObject.draw(canvas);
         }
-        if (stageManager != null)
-            stageManager.draw(canvas);
     }
 
     // Implements method of SurfaceHolder.Callback
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
-        soundManager = new SoundManager(this);
-        managerObjectList.add(soundManager);
-        puyoChainingAnimation = new PuyoChainingAnimation(this);
-        managerObjectList.add(puyoChainingAnimation);
         stageManager = new StageManager(this);
         managerObjectList.add(stageManager);
+        soundManager = new SoundManager(this);
+        managerObjectList.add(soundManager);
+        puyoChainingAnimation = new PuyoChainingAnimation(this, stageManager);
+        managerObjectList.add(puyoChainingAnimation);
         opponentPuyo = new OpponentPuyo(this, BitmapFactory.decodeResource(getResources(), R.drawable.spr_puyo, options));
         managerObjectList.add(opponentPuyo);
 
         for (int i = 0; i < 4; i++) {
-            createFieldUI(R.drawable.ui_field_background, fieldUIBackgroundList, 24 + FIELD_INTERVAL*i, 300);
-            createFieldUI(R.drawable.ui_field_frame, fieldUIList, 24 + FIELD_INTERVAL*i, 300);
-            createFieldUI(R.drawable.ui_field_next, fieldUIList, 24 + FIELD_INTERVAL*i + 128, 70);
-            createScoreUI(R.drawable.ui_field_score, fieldUIScoreList, i, 64 + FIELD_INTERVAL*i, 510);
+            createFieldUI(R.drawable.ui_field_background, fieldUIBackgroundList, 24 + 234 * i, 300);
+            createFieldUI(R.drawable.ui_field_frame, fieldUIList, 24 + 234 * i, 300);
+            createFieldUI(R.drawable.ui_field_next, fieldUIList, 24 + 234 * i + 128, 70);
+            createScoreUI(R.drawable.ui_field_score, fieldUIScoreList, 64 + 234 * i, 510);
         }
 
         options.inScaled = false;
         Bitmap bitmap = BitmapFactory.decodeResource(getResources(), R.drawable.spr_puyo, options);
-        puyoActivePair = new PuyoActivePair(this, soundManager, bitmap);
+        puyoActivePair = new PuyoActivePair(this, stageManager, soundManager, bitmap);
 
         this.gameThread = new GameThread(this, holder);
         this.gameThread.setRunning(true);
         this.gameThread.start();
 
-        networkManager = new NetworkManager(this);
+        startClient("192.168.0.19", 8081);
+        startServer();
     }
 
     private void createFieldUI(int id, List<GameObject> list, int x, int y) { // UI 오브젝트 생성
@@ -261,9 +245,22 @@ public class GameSurface extends SurfaceView implements SurfaceHolder.Callback {
         list.add(new FieldUI(this, bitmap, x, y));
     }
 
-    private void createScoreUI(int id, List<Score> list, int player, int x, int y) { // Score UI 오브젝트 생성
+    private void createScoreUI(int id, List<Score> list, int x, int y) { // Score UI 오브젝트 생성
         Bitmap bitmap = BitmapFactory.decodeResource(getResources(), id, options);
-        list.add(new Score(this, player, bitmap, x, y));
+        list.add(new Score(this, bitmap, x, y));
+    }
+
+    public void createPuyo(int color, int row, int col) {
+        if (0 < color && color <= 5) { // 1:red, 2:green, 3:blue, 4:yellow, 5:garbage
+            if (0 <= row && row < MAX_ROW) {
+                if (0 <= col && col < MAX_COLUMN) {
+                    Bitmap bitmap = BitmapFactory.decodeResource(getResources(), R.drawable.spr_puyo, options);
+                    puyoArray[row][col] = new Puyo(this, bitmap, row, col, color);
+
+                    puyoList.add(puyoArray[row][col]);
+                }
+            }
+        }
     }
 
     public void createPuyoActivePair(int colorMain, int colorSub) {
@@ -276,50 +273,23 @@ public class GameSurface extends SurfaceView implements SurfaceHolder.Callback {
         puyoActivePair.setEnabled(colorMain, colorSub);
     }
 
-    public void createPuyo(int player, int color, int row, int col) {
-        try {
-            if (0 < color && color <= 5) { // 1:red, 2:green, 3:blue, 4:yellow, 5:garbage
-                Bitmap bitmap = BitmapFactory.decodeResource(getResources(), R.drawable.spr_puyo, options);
-                opponentPuyo.puyoMap[player][row][col] = new Puyo(this, bitmap, player, color, row, col);
-                //puyoArray[row][col] = new Puyo(this, bitmap, row, col, color);
-
-                puyoList.add(opponentPuyo.puyoMap[player][row][col]);
-
-                if (!(row >= MAX_ACTIVE_ROW && color != 5)) {
-                    if (player == Network.player) {
-                        networkManager.addPuyo(color, row, col);
-                    }
-                }
-            }
-        }
-        catch (IndexOutOfBoundsException e) {
-            e.printStackTrace();
-        }
+    public void destroyPuyo(int row, int col) {
+        puyoList.remove(puyoArray[row][col]);
+        puyoArray[row][col] = null;
     }
 
-    public void destroyPuyo(int player, int row, int col) {
-        puyoList.remove(opponentPuyo.puyoMap[player][row][col]);
-        opponentPuyo.puyoMap[player][row][col] = null;
-
-        if (row < MAX_ACTIVE_ROW) {
-            if (player == Network.player) {
-                networkManager.destroyPuyo(row, col);
-            }
-        }
-    }
-
-    public void fallPuyo(int player) {
+    public void fallPuyo() {
         for (int c = 0; c < MAX_COLUMN; c++) {
             int empty = 0;
             for (int r = 0; r < MAX_ROW; r++) {
-                if (opponentPuyo.puyoMap[player][r][c] == null) {
+                if (puyoArray[r][c] == null) {
                     empty++;
                 }
                 else if (empty > 0) {
                     int new_r = r-empty;
-                    opponentPuyo.puyoMap[player][new_r][c] = opponentPuyo.puyoMap[player][r][c];
-                    opponentPuyo.puyoMap[player][new_r][c].setRowColumn(new_r, c);
-                    opponentPuyo.puyoMap[player][r][c] = null;
+                    puyoArray[new_r][c] = puyoArray[r][c];
+                    puyoArray[new_r][c].setRowColumn(new_r, c);
+                    puyoArray[r][c] = null;
                 }
             }
         }
@@ -328,8 +298,8 @@ public class GameSurface extends SurfaceView implements SurfaceHolder.Callback {
     public void destroyOutPuyo() {
         for (int c = 0; c < MAX_COLUMN; c++) {
             for (int r = MAX_ACTIVE_ROW; r < MAX_ROW; r++) {
-                if (opponentPuyo.puyoMap[Network.player][r][c] != null) {
-                    destroyPuyo(Network.player, r, c);
+                if (puyoArray[r][c] != null) {
+                    destroyPuyo(r, c);
                 }
             }
         }
@@ -351,9 +321,9 @@ public class GameSurface extends SurfaceView implements SurfaceHolder.Callback {
 
         for (int c = 0; c < MAX_COLUMN; c++) {
             for (int r = 0; r < MAX_ACTIVE_ROW - 1; r++) {
-                if (opponentPuyo.puyoMap[Network.player][r][c] == null)
+                if (puyoArray[r][c] == null)
                     break;
-                else if (opponentPuyo.puyoMap[Network.player][r][c].getColor() == Color.COLOR_GARBAGE)
+                else if (puyoArray[r][c].getColor() == Color.COLOR_GARBAGE)
                     continue;
                 else if (visited[r][c])
                     continue;
@@ -362,7 +332,7 @@ public class GameSurface extends SurfaceView implements SurfaceHolder.Callback {
                 int[] arr = {r, c};
                 queue.offer(arr);
                 tmp.offer(arr);
-                int puyoColor = opponentPuyo.puyoMap[Network.player][r][c].getColor();
+                int puyoColor = puyoArray[r][c].getColor();
 
                 while(!queue.isEmpty()) {
                     int[] rc = queue.poll();
@@ -372,9 +342,9 @@ public class GameSurface extends SurfaceView implements SurfaceHolder.Callback {
                         int dc = rc[1] + dx[i];
 
                         if (dr >= 0 && dr < MAX_ACTIVE_ROW && dc >= 0 && dc < MAX_COLUMN) {
-                            if (opponentPuyo.puyoMap[Network.player][dr][dc] != null) {
+                            if (puyoArray[dr][dc] != null) {
                                 if (!visited[dr][dc]) {
-                                    if (puyoColor == opponentPuyo.puyoMap[Network.player][dr][dc].getColor()) {
+                                    if (puyoColor == puyoArray[dr][dc].getColor()) {
                                         visited[dr][dc] = true;
                                         int[] arrD = new int[2];
                                         arrD[0] = dr;
@@ -392,7 +362,7 @@ public class GameSurface extends SurfaceView implements SurfaceHolder.Callback {
                     int[] e = tmp.element();
                     makeExplosion();
                     score_puyo_number += tmp.size();
-                    score_connection_number[opponentPuyo.puyoMap[Network.player][e[0]][e[1]].getColor() - 1] += tmp.size();
+                    score_connection_number[puyoArray[e[0]][e[1]].getColor() - 1] += tmp.size();
 
                     while(!tmp.isEmpty()) {
                         int[] t = tmp.poll();
@@ -402,19 +372,19 @@ public class GameSurface extends SurfaceView implements SurfaceHolder.Callback {
                             int dc = t[1] + dx[i];
 
                             if (dr >= 0 && dr < MAX_ACTIVE_ROW && dc >= 0 && dc < MAX_COLUMN) {
-                                if (opponentPuyo.puyoMap[Network.player][dr][dc] != null) {
+                                if (puyoArray[dr][dc] != null) {
                                     if (!visited[dr][dc]) {
-                                        if (opponentPuyo.puyoMap[Network.player][dr][dc].getColor() == Color.COLOR_GARBAGE) {
+                                        if (puyoArray[dr][dc].getColor() == Color.COLOR_GARBAGE) {
                                             visited[dr][dc] = true;
-                                            puyoChainingAnimation.addPuyo(opponentPuyo.puyoMap[Network.player][dr][dc]);
-                                            opponentPuyo.puyoMap[Network.player][dr][dc].remove();
+                                            puyoChainingAnimation.addPuyo(puyoArray[dr][dc]);
+                                            puyoArray[dr][dc].remove();
                                         }
                                     }
                                 }
                             }
                         }
-                        puyoChainingAnimation.addPuyo(opponentPuyo.puyoMap[Network.player][t[0]][t[1]]);
-                        opponentPuyo.puyoMap[Network.player][t[0]][t[1]].remove();
+                        puyoChainingAnimation.addPuyo(puyoArray[t[0]][t[1]]);
+                        puyoArray[t[0]][t[1]].remove();
                     }
                     result = true;
                 }
@@ -433,26 +403,16 @@ public class GameSurface extends SurfaceView implements SurfaceHolder.Callback {
         }
 
         if (result) {
-            int chain_count = stageManager.getChainCnt();
-            fieldUIScoreList.get(Network.player).addScore(score_puyo_number, chain_count, score_connection_number, color_number);
+            fieldUIScoreList.get(Network.player).addScore(score_puyo_number, stageManager.getChainCnt(), score_connection_number, color_number);
             puyoChainingAnimation.startChainingAnimation();
         }
         return result; // 체인이 존재하면 true 리턴. 없으면 false 리턴.
     }
 
-    public void chainAttack() {
-        if (garbagePuyo > 0) {
-            attacked = true;
-            networkManager.setGarbage(Network.player, garbagePuyo);
-            //stageManager.addWarningPuyo(-garbagePuyo); // Defense
-            garbagePuyo = 0;
-        }
-    }
-
     public int getColumnHeight(int col) {
         int row = 0;
         int columnHeight = 0;
-        while(opponentPuyo.puyoMap[Network.player][row][col] != null) {
+        while(puyoArray[row][col] != null) {
             row++;
             columnHeight++;
         }
@@ -461,7 +421,7 @@ public class GameSurface extends SurfaceView implements SurfaceHolder.Callback {
 
     public boolean isPuyoExists(int row, int col) { // 뿌요가 존재하거나 벽이면 true 리턴
         try {
-            if (opponentPuyo.puyoMap[Network.player][row][col] == null) {
+            if (puyoArray[row][col] == null) {
                 return false;
             } else {
                 return true;
@@ -499,6 +459,6 @@ public class GameSurface extends SurfaceView implements SurfaceHolder.Callback {
         garbageScore += add;
         int garbagePuyo = garbageScore / 70;
         garbageScore -= garbagePuyo*70;
-        this.garbagePuyo += garbagePuyo;
+        clientThread.sendAttackMessage(garbagePuyo);
     }
 }

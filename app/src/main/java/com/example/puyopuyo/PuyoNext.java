@@ -42,14 +42,4 @@ public class PuyoNext extends GameObject {
         this.colorMain = colorMain;
         this.colorSub = colorSub;
     }
-
-    public int getColor(int num) {
-        if (num == 0) {
-            return colorMain;
-        }
-        else if (num == 1) {
-            return colorSub;
-        }
-        return -1;
-    }
 }

@@ -16,33 +16,30 @@ import static android.content.ContentValues.TAG;
 // 사이트 참조: https://o7planning.org/en/10521/android-2d-game-tutorial-for-beginners
 
 class Color {
-    static final int COLOR_RED = 1;
-    static final int COLOR_GREEN = 2;
-    static final int COLOR_BLUE = 3;
-    static final int COLOR_YELLOW = 4;
-    static final int COLOR_GARBAGE = 5;
+    public static final int COLOR_RED = 1;
+    public static final int COLOR_GREEN = 2;
+    public static final int COLOR_BLUE = 3;
+    public static final int COLOR_YELLOW = 4;
+    public static final int COLOR_GARBAGE = 5;
 }
 
 class Stage {
-    static final int CONTROL_STAGE = 0;
-    static final int FALL_STAGE = 1;
-    static final int CHAIN_STAGE = 2;
-    static final int GARBAGE_STAGE = 3;
+    public static final int CONTROL_STAGE = 0;
+    public static final int FALL_STAGE = 1;
+    public static final int CHAIN_STAGE = 2;
+    public static final int GARBAGE_STAGE = 3;
 }
 
 class FieldSize {
-    static final int COLUMN = 32;
-    static final int ROW = 29;
-    static final int MAX_ROW = 18;
-    static final int MAX_COLUMN = 6;
-    static final int MAX_ACTIVE_ROW = 13;
-    static final int FIELD_INTERVAL = 234;
-    static float SCREEN_RATIO;
+    public static final int COLUMN = 32;
+    public static final int ROW = 29;
+    public static final int MAX_ROW = 18;
+    public static final int MAX_COLUMN = 6;
+    public static final int MAX_ACTIVE_ROW = 13;
+    public static float SCREEN_RATIO;
 }
 
 public class GameActivity extends Activity {
-
-    GameSurface gameSurface;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -66,15 +63,13 @@ public class GameActivity extends Activity {
         FieldSize.SCREEN_RATIO = (float) size.y / 600f;
 
         //setContentView(R.layout.activity_main);
-        gameSurface = new GameSurface(this, size.x, size.y);
-        this.setContentView(gameSurface);
+        this.setContentView(new GameSurface(this, size.x, size.y));
 
         Log.d(TAG, "SCREEN_RATIO: "+FieldSize.SCREEN_RATIO);
     }
 
     @Override
     public void onBackPressed() {
-        gameSurface.gameThread.interrupt();
         finish();
     }
 
